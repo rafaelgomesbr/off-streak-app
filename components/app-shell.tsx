@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { useI18n } from "@/lib/i18n"
-import { usePreferences } from "@/lib/preferences-context"
 import { useNotifications } from "@/hooks/use-notifications"
 import { LoginScreen } from "@/components/login-screen"
 import { HomeScreen } from "@/components/home-screen"
@@ -18,9 +17,8 @@ import { Flame } from "lucide-react"
 type Tab = "home" | "ranking" | "profile"
 
 export function AppShell() {
-  const { user, loading } = useAuth()
+  const { user, loading, onboardingCompleted, completeOnboarding } = useAuth()
   const { t } = useI18n()
-  const { preferences, completeOnboarding } = usePreferences()
   const [activeTab, setActiveTab] = useState<Tab>("home")
   const [showLanding, setShowLanding] = useState(true)
   const [isPWA, setIsPWA] = useState(false)
@@ -64,7 +62,7 @@ export function AppShell() {
   }
 
   // Show onboarding for new users
-  if (!preferences.onboardingCompleted) {
+  if (!onboardingCompleted) {
     return <Onboarding onComplete={completeOnboarding} />
   }
 

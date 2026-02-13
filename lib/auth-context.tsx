@@ -20,22 +20,27 @@ import { auth, db, googleProvider } from "@/lib/firebase"
 interface AuthContextType {
   user: User | null
   loading: boolean
+  onboardingCompleted: boolean
   signInWithGoogle: () => Promise<void>
   signInAnon: () => Promise<void>
   signOut: () => Promise<void>
+  completeOnboarding: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
+  onboardingCompleted: false,
   signInWithGoogle: async () => {},
   signInAnon: async () => {},
   signOut: async () => {},
+  completeOnboarding: async () => {},
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -50,11 +55,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             currentStreak: 0,
             bestStreak: 0,
             lastCheckDate: null,
+            onboardingCompleted: false,
             createdAt: serverTimestamp(),
           })
+          setOnboardingCompleted(false)
+        } else {
+          // Check if onboarding was completed
+          const userData = userSnap.data()
+          setOnboardingCompleted(userData?.onboardingCompleted ?? false)
         }
       } else {
         setUser(null)
+        setOnboardingCompleted(false)
       }
       setLoading(false)
     })
@@ -73,9 +85,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await firebaseSignOut(auth)
   }
 
+  const completeOnboarding = async () => {
+    if (!user) {
+      console.error("No user found for completeOnboarding")
+      return
+    }
+    try {
+      const userRef = doc(db, "users", user.uid)
+      await setDoc(userRef, { onboardingCompleted: true }, { merge: true })
+      setOnboardingCompleted(true)
+    } catch (e) {
+      console.error("Error completing onboarding:", e)
+      // Still update local state so user can proceed
+      setOnboardingCompleted(true)
+    }
+  }
+
   return (
     <AuthContext.Provider
-      value={{ user, loading, signInWithGoogle, signInAnon, signOut }}
+      value={{ user, loading, onboardingCompleted, signInWithGoogle, signInAnon, signOut, completeOnboarding }}
     >
       {children}
     </AuthContext.Provider>

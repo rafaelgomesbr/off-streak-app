@@ -40,12 +40,16 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     })
 
     // Request notification permission
-    const granted = await requestNotificationPermission()
-    if (granted) {
-      updatePreferences({ notificationsEnabled: true })
+    try {
+      const granted = await requestNotificationPermission()
+      if (granted) {
+        updatePreferences({ notificationsEnabled: true })
+      }
+    } catch (e) {
+      console.log("Notification permission error:", e)
     }
 
-    onComplete()
+    await onComplete()
   }
 
   const steps = [
