@@ -40,11 +40,11 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className={`${inter.variable} font-sans antialiased`}>
         <I18nProvider>
-          <PreferencesProvider>
-            <AuthProvider>
+          <AuthProvider>
+            <PreferencesProvider>
               {children}
-            </AuthProvider>
-          </PreferencesProvider>
+            </PreferencesProvider>
+          </AuthProvider>
         </I18nProvider>
       </body>
     </html>

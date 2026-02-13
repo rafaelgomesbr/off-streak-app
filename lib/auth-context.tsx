@@ -17,6 +17,8 @@ import {
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore"
 import { auth, db, googleProvider } from "@/lib/firebase"
 
+import { type SocialNetworkId } from "@/lib/social-networks"
+
 interface AuthContextType {
   user: User | null
   loading: boolean
@@ -24,7 +26,7 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<void>
   signInAnon: () => Promise<void>
   signOut: () => Promise<void>
-  completeOnboarding: () => Promise<void>
+  completeOnboarding: (selectedNetworks?: SocialNetworkId[]) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -56,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             bestStreak: 0,
             lastCheckDate: null,
             onboardingCompleted: false,
+            isAnonymous: firebaseUser.isAnonymous,
             createdAt: serverTimestamp(),
           })
           setOnboardingCompleted(false)
@@ -63,6 +66,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Check if onboarding was completed
           const userData = userSnap.data()
           setOnboardingCompleted(userData?.onboardingCompleted ?? false)
+          // Update isAnonymous status if user linked account
+          if (userData?.isAnonymous !== firebaseUser.isAnonymous) {
+            await setDoc(userRef, { isAnonymous: firebaseUser.isAnonymous }, { merge: true })
+          }
         }
       } else {
         setUser(null)
@@ -85,14 +92,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await firebaseSignOut(auth)
   }
 
-  const completeOnboarding = async () => {
+  const completeOnboarding = async (selectedNetworks?: SocialNetworkId[]) => {
     if (!user) {
       console.error("No user found for completeOnboarding")
       return
     }
     try {
       const userRef = doc(db, "users", user.uid)
-      await setDoc(userRef, { onboardingCompleted: true }, { merge: true })
+      const updateData: Record<string, unknown> = { onboardingCompleted: true }
+      if (selectedNetworks && selectedNetworks.length > 0) {
+        updateData.selectedNetworks = selectedNetworks
+        updateData.dailyResults = []
+        updateData.averageScore = 0
+      }
+      await setDoc(userRef, updateData, { merge: true })
       setOnboardingCompleted(true)
     } catch (e) {
       console.error("Error completing onboarding:", e)

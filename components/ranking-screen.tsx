@@ -5,13 +5,39 @@ import { collection, query, orderBy, limit, getDocs } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { useAuth } from "@/lib/auth-context"
 import { useI18n } from "@/lib/i18n"
-import { Trophy, Flame, Crown, Medal } from "lucide-react"
+import { Trophy, Flame, Crown, Medal, Target } from "lucide-react"
+import { SOCIAL_NETWORKS, type SocialNetworkId } from "@/lib/social-networks"
+import {
+  Instagram,
+  Facebook,
+  Twitter,
+  Youtube,
+  Linkedin,
+  MessageCircle,
+  Music,
+  AtSign,
+  Ghost,
+} from "lucide-react"
+
+const iconMap: Record<string, React.ReactNode> = {
+  instagram: <Instagram className="h-3 w-3" />,
+  facebook: <Facebook className="h-3 w-3" />,
+  twitter: <Twitter className="h-3 w-3" />,
+  youtube: <Youtube className="h-3 w-3" />,
+  linkedin: <Linkedin className="h-3 w-3" />,
+  "message-circle": <MessageCircle className="h-3 w-3" />,
+  music: <Music className="h-3 w-3" />,
+  "at-sign": <AtSign className="h-3 w-3" />,
+  ghost: <Ghost className="h-3 w-3" />,
+}
 
 interface LeaderboardUser {
   uid: string
   name: string
   currentStreak: number
   bestStreak: number
+  selectedNetworks?: SocialNetworkId[]
+  avgScore?: number
 }
 
 export function RankingScreen() {
@@ -26,19 +52,34 @@ export function RankingScreen() {
       const q = query(
         collection(db, "users"),
         orderBy("currentStreak", "desc"),
-        limit(50)
+        limit(100) // Fetch more to account for filtered anonymous users
       )
       const snap = await getDocs(q)
       const list: LeaderboardUser[] = []
       snap.forEach((doc) => {
+        const data = doc.data()
+        // Skip anonymous users in ranking
+        if (data.isAnonymous === true) return
+        
+        // Calculate average score from daily results
+        let avgScore = 0
+        if (data.dailyResults && data.dailyResults.length > 0) {
+          avgScore = Math.round(
+            data.dailyResults.reduce((sum: number, r: any) => sum + (r.score || 0), 0) / 
+            data.dailyResults.length
+          )
+        }
         list.push({
           uid: doc.id,
-          name: doc.data().name || "Anonymous",
-          currentStreak: doc.data().currentStreak || 0,
-          bestStreak: doc.data().bestStreak || 0,
+          name: data.name || "Anonymous",
+          currentStreak: data.currentStreak || 0,
+          bestStreak: data.bestStreak || 0,
+          selectedNetworks: data.selectedNetworks || [],
+          avgScore,
         })
       })
-      setUsers(list)
+      // Limit to 50 after filtering
+      setUsers(list.slice(0, 50))
       setLoading(false)
     }
     fetchLeaderboard()
@@ -81,6 +122,11 @@ export function RankingScreen() {
         <div className="flex flex-col gap-2">
           {users.map((u, i) => {
             const isCurrentUser = user?.uid === u.uid
+            const networks = (u.selectedNetworks || [])
+              .map((id) => SOCIAL_NETWORKS.find((n) => n.id === id))
+              .filter(Boolean)
+              .slice(0, 5) // Show max 5 network icons
+            
             return (
               <div
                 key={u.uid}
@@ -96,7 +142,7 @@ export function RankingScreen() {
                 <div className="flex h-8 w-8 items-center justify-center">
                   {getPositionIcon(i)}
                 </div>
-                <div className="flex flex-1 flex-col">
+                <div className="flex flex-1 flex-col gap-1">
                   <span
                     className={`text-sm font-semibold ${
                       isCurrentUser ? "text-primary" : "text-foreground"
@@ -105,9 +151,36 @@ export function RankingScreen() {
                     {u.name}
                     {isCurrentUser && ` ${t.ranking.you}`}
                   </span>
-                  <span className="text-xs text-muted-foreground">
-                    {t.home.bestStreak}: {u.bestStreak} {t.ranking.daysStreak}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {t.home.bestStreak}: {u.bestStreak} {t.ranking.daysStreak}
+                    </span>
+                    {u.avgScore !== undefined && u.avgScore > 0 && (
+                      <span className="flex items-center gap-1 text-xs text-green-500">
+                        <Target className="h-3 w-3" />
+                        {u.avgScore}%
+                      </span>
+                    )}
+                  </div>
+                  {networks.length > 0 && (
+                    <div className="flex items-center gap-1 mt-0.5">
+                      {networks.map((network) => (
+                        <span
+                          key={network!.id}
+                          className="opacity-60"
+                          style={{ color: network!.color }}
+                          title={network!.name}
+                        >
+                          {iconMap[network!.icon]}
+                        </span>
+                      ))}
+                      {(u.selectedNetworks?.length || 0) > 5 && (
+                        <span className="text-xs text-muted-foreground">
+                          +{(u.selectedNetworks?.length || 0) - 5}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Flame className="h-4 w-4 text-primary" />

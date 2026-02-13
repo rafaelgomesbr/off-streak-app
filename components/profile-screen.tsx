@@ -4,10 +4,14 @@ import { useAuth } from "@/lib/auth-context"
 import { useStreak } from "@/hooks/use-streak"
 import { useI18n } from "@/lib/i18n"
 import { usePreferences } from "@/lib/preferences-context"
-import { useState } from "react"
-import { doc, updateDoc } from "firebase/firestore"
+import { useState, useEffect } from "react"
+import { doc, updateDoc, getDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { DonationModal } from "@/components/donation-modal"
+import { NetworkStatsCard } from "@/components/network-stats"
+import { NetworkSelection } from "@/components/network-selection"
+import { TimeInput24h } from "@/components/ui/time-input-24h"
+import { SOCIAL_NETWORKS, type SocialNetworkId } from "@/lib/social-networks"
 import {
   User,
   Flame,
@@ -22,7 +26,29 @@ import {
   Globe,
   Clock,
   ChevronRight,
+  Share2,
+  Instagram,
+  Facebook,
+  Twitter,
+  Youtube,
+  Linkedin,
+  MessageCircle,
+  Music,
+  AtSign,
+  Ghost,
 } from "lucide-react"
+
+const iconMap: Record<string, React.ReactNode> = {
+  instagram: <Instagram className="h-4 w-4" />,
+  facebook: <Facebook className="h-4 w-4" />,
+  twitter: <Twitter className="h-4 w-4" />,
+  youtube: <Youtube className="h-4 w-4" />,
+  linkedin: <Linkedin className="h-4 w-4" />,
+  "message-circle": <MessageCircle className="h-4 w-4" />,
+  music: <Music className="h-4 w-4" />,
+  "at-sign": <AtSign className="h-4 w-4" />,
+  ghost: <Ghost className="h-4 w-4" />,
+}
 
 export function ProfileScreen() {
   const { user, signOut } = useAuth()
@@ -35,6 +61,37 @@ export function ProfileScreen() {
   const [saving, setSaving] = useState(false)
   const [showSupport, setShowSupport] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [notificationLoading, setNotificationLoading] = useState(false)
+  const [selectedNetworks, setSelectedNetworks] = useState<SocialNetworkId[]>([])
+  const [editingNetworks, setEditingNetworks] = useState(false)
+  const [savingNetworks, setSavingNetworks] = useState(false)
+
+  // Fetch user's selected networks
+  useEffect(() => {
+    const fetchNetworks = async () => {
+      if (!user) return
+      const userRef = doc(db, "users", user.uid)
+      const snap = await getDoc(userRef)
+      if (snap.exists()) {
+        const data = snap.data()
+        setSelectedNetworks(data.selectedNetworks || [])
+      }
+    }
+    fetchNetworks()
+  }, [user])
+
+  const handleSaveNetworks = async () => {
+    if (!user || selectedNetworks.length === 0) return
+    setSavingNetworks(true)
+    try {
+      const userRef = doc(db, "users", user.uid)
+      await updateDoc(userRef, { selectedNetworks })
+      setEditingNetworks(false)
+    } catch (e) {
+      console.error("Error saving networks:", e)
+    }
+    setSavingNetworks(false)
+  }
 
   const handleSaveName = async () => {
     if (!user || !name.trim()) return
@@ -47,13 +104,36 @@ export function ProfileScreen() {
   }
 
   const handleToggleNotifications = async () => {
-    if (!preferences.notificationsEnabled) {
-      const granted = await requestNotificationPermission()
-      if (granted) {
-        updatePreferences({ notificationsEnabled: true })
+    if (notificationLoading) return
+    setNotificationLoading(true)
+    
+    try {
+      if (!preferences.notificationsEnabled) {
+        // Check if notifications are supported
+        if (!("Notification" in window)) {
+          console.log("Notifications not supported")
+          alert(language === "pt-BR" 
+            ? "Seu navegador não suporta notificações" 
+            : "Your browser doesn't support notifications")
+          return
+        }
+        
+        const granted = await requestNotificationPermission()
+        console.log("Notification permission result:", granted)
+        if (granted) {
+          updatePreferences({ notificationsEnabled: true })
+        } else {
+          alert(language === "pt-BR" 
+            ? "Permissão de notificações negada. Verifique as configurações do navegador." 
+            : "Notification permission denied. Check your browser settings.")
+        }
+      } else {
+        updatePreferences({ notificationsEnabled: false })
       }
-    } else {
-      updatePreferences({ notificationsEnabled: false })
+    } catch (e) {
+      console.error("Error toggling notifications:", e)
+    } finally {
+      setNotificationLoading(false)
     }
   }
 
@@ -134,6 +214,84 @@ export function ProfileScreen() {
         </div>
       </div>
 
+      {/* Network Stats */}
+      <NetworkStatsCard />
+
+      {/* Selected Networks */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+            {language === "pt-BR" ? "Minhas Redes" : "My Networks"}
+          </h3>
+          <button
+            onClick={() => setEditingNetworks(!editingNetworks)}
+            className="text-xs text-primary font-medium"
+          >
+            {editingNetworks 
+              ? (language === "pt-BR" ? "Cancelar" : "Cancel")
+              : (language === "pt-BR" ? "Editar" : "Edit")}
+          </button>
+        </div>
+        
+        {editingNetworks ? (
+          <div className="flex flex-col gap-3 rounded-2xl bg-card p-4 border border-border">
+            <p className="text-xs text-muted-foreground text-center mb-2">
+              {language === "pt-BR" 
+                ? "Selecione as redes sociais que você quer evitar"
+                : "Select the social networks you want to avoid"}
+            </p>
+            <NetworkSelection
+              selectedNetworks={selectedNetworks}
+              onChange={setSelectedNetworks}
+              compact
+            />
+            <button
+              onClick={handleSaveNetworks}
+              disabled={savingNetworks || selectedNetworks.length === 0}
+              className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+            >
+              <Check className="h-4 w-4" />
+              {savingNetworks 
+                ? (language === "pt-BR" ? "Salvando..." : "Saving...")
+                : (language === "pt-BR" ? "Salvar" : "Save")}
+            </button>
+          </div>
+        ) : selectedNetworks.length > 0 ? (
+          <div className="flex flex-wrap gap-2 rounded-2xl bg-card p-4 border border-border">
+            {selectedNetworks.map((networkId) => {
+              const network = SOCIAL_NETWORKS.find((n) => n.id === networkId)
+              if (!network) return null
+              return (
+                <div
+                  key={networkId}
+                  className="flex items-center gap-2 rounded-full px-3 py-1.5"
+                  style={{ backgroundColor: `${network.color}15` }}
+                >
+                  <span style={{ color: network.color }}>
+                    {iconMap[network.icon]}
+                  </span>
+                  <span className="text-xs font-medium text-foreground">
+                    {network.name}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <button
+            onClick={() => setEditingNetworks(true)}
+            className="flex items-center justify-center gap-2 rounded-2xl bg-card p-4 border border-dashed border-border text-muted-foreground hover:bg-secondary transition-colors"
+          >
+            <Share2 className="h-5 w-5" />
+            <span className="text-sm">
+              {language === "pt-BR" 
+                ? "Selecionar redes sociais"
+                : "Select social networks"}
+            </span>
+          </button>
+        )}
+      </div>
+
       {/* Settings */}
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">
@@ -173,7 +331,8 @@ export function ProfileScreen() {
         {/* Notifications Toggle */}
         <button
           onClick={handleToggleNotifications}
-          className="flex items-center gap-4 rounded-2xl bg-card px-4 py-3 border border-border transition-all hover:bg-secondary"
+          disabled={notificationLoading}
+          className={`flex items-center gap-4 rounded-2xl bg-card px-4 py-3 border border-border transition-all hover:bg-secondary ${notificationLoading ? "opacity-50" : ""}`}
         >
           {preferences.notificationsEnabled ? (
             <Bell className="h-5 w-5 text-primary" />
@@ -185,9 +344,11 @@ export function ProfileScreen() {
               {t.profile.notifications}
             </span>
             <span className="text-xs text-muted-foreground">
-              {preferences.notificationsEnabled
-                ? t.profile.notificationsOn
-                : t.profile.notificationsOff}
+              {notificationLoading 
+                ? (language === "pt-BR" ? "Aguarde..." : "Please wait...")
+                : preferences.notificationsEnabled
+                  ? t.profile.notificationsOn
+                  : t.profile.notificationsOff}
             </span>
           </div>
           <div
@@ -203,35 +364,88 @@ export function ProfileScreen() {
           </div>
         </button>
 
+        {/* Challenge Schedule */}
+        <div className="flex flex-col gap-3 rounded-2xl bg-card p-4 border border-border">
+          <div className="flex items-center gap-3">
+            <Clock className="h-5 w-5 text-primary" />
+            <div className="flex-1">
+              <span className="text-sm font-medium text-foreground">
+                {t.settings.challengeSchedule}
+              </span>
+              <p className="text-xs text-muted-foreground">
+                {t.settings.challengeScheduleDesc}
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">{t.settings.challengeStart}</label>
+              <TimeInput24h
+                value={preferences.challengeStartTime}
+                onChange={(value) => updatePreferences({ challengeStartTime: value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">{t.settings.challengeEnd}</label>
+              <TimeInput24h
+                value={preferences.challengeEndTime}
+                onChange={(value) => updatePreferences({ challengeEndTime: value })}
+              />
+            </div>
+          </div>
+        </div>
+
         {/* Notification Times */}
         {preferences.notificationsEnabled && (
           <div className="flex flex-col gap-3 rounded-2xl bg-card p-4 border border-border animate-fade-in-up">
             <div className="flex items-center gap-3">
-              <Clock className="h-5 w-5 text-primary" />
-              <span className="text-sm font-medium text-foreground">
-                {t.settings.notificationTime}
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-muted-foreground">{t.profile.morningTime}</label>
-                <input
-                  type="time"
-                  value={preferences.morningTime}
-                  onChange={(e) => updatePreferences({ morningTime: e.target.value })}
-                  className="rounded-xl bg-secondary px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-muted-foreground">{t.profile.eveningTime}</label>
-                <input
-                  type="time"
-                  value={preferences.eveningTime}
-                  onChange={(e) => updatePreferences({ eveningTime: e.target.value })}
-                  className="rounded-xl bg-secondary px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary"
-                />
+              <Bell className="h-5 w-5 text-primary" />
+              <div className="flex-1">
+                <span className="text-sm font-medium text-foreground">
+                  {t.settings.notificationTimes}
+                </span>
+                <p className="text-xs text-muted-foreground">
+                  {t.settings.notificationTimesDesc}
+                </p>
               </div>
             </div>
+            <div className="flex flex-col gap-2">
+              {preferences.notificationTimes.map((time, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <TimeInput24h
+                    value={time}
+                    onChange={(value) => {
+                      const newTimes = [...preferences.notificationTimes]
+                      newTimes[index] = value
+                      updatePreferences({ notificationTimes: newTimes })
+                    }}
+                  />
+                  {preferences.notificationTimes.length > 1 && (
+                    <button
+                      onClick={() => {
+                        const newTimes = preferences.notificationTimes.filter((_, i) => i !== index)
+                        updatePreferences({ notificationTimes: newTimes })
+                      }}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-destructive/10 text-destructive hover:bg-destructive/20"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {preferences.notificationTimes.length < 5 && (
+              <button
+                onClick={() => {
+                  const newTimes = [...preferences.notificationTimes, "12:00"]
+                  updatePreferences({ notificationTimes: newTimes })
+                }}
+                className="flex items-center justify-center gap-2 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary/80"
+              >
+                <span>+</span>
+                {t.settings.addNotification}
+              </button>
+            )}
           </div>
         )}
 

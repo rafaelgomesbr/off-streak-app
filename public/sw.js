@@ -1,10 +1,17 @@
 // No Scroll Streak Service Worker for Push Notifications
 
-const CACHE_NAME = "noscroll-v1"
+const CACHE_NAME = "noscroll-v3"
 
-// Install event
+// Install event - clear old caches
 self.addEventListener("install", (event) => {
   console.log("[SW] Installing service worker...")
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))
+      )
+    })
+  )
   self.skipWaiting()
 })
 

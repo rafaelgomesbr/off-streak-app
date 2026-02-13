@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { useAuth } from "@/lib/auth-context"
+import { usePreferences } from "@/lib/preferences-context"
 
 interface StreakData {
   currentStreak: number
@@ -13,27 +14,42 @@ interface StreakData {
   name: string
 }
 
-type DayPhase = "morning" | "evening"
+type DayPhase = "active" | "inactive" // active = challenge time, inactive = rest time
 type DayStatus = "not-started" | "in-progress" | "completed" | "failed"
 
 export function useStreak() {
   const { user } = useAuth()
+  const { preferences } = usePreferences()
   const [data, setData] = useState<StreakData | null>(null)
   const [loading, setLoading] = useState(true)
   const [dayStatus, setDayStatus] = useState<DayStatus>("not-started")
-  const [currentPhase, setCurrentPhase] = useState<DayPhase>("morning")
+  const [currentPhase, setCurrentPhase] = useState<DayPhase>("inactive")
 
   const getTodayStr = () => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
   }
 
-  const getCurrentPhase = (): DayPhase => {
-    const now = new Date()
-    const hour = now.getHours()
-    // Morning phase: 5am - 2pm, Evening phase: 2pm onwards
-    return hour >= 5 && hour < 14 ? "morning" : "evening"
+  const parseTime = (timeStr: string): number => {
+    const [hours, minutes] = timeStr.split(":").map(Number)
+    return hours * 60 + minutes
   }
+
+  const getCurrentPhase = useCallback((): DayPhase => {
+    const now = new Date()
+    const currentMinutes = now.getHours() * 60 + now.getMinutes()
+    const startMinutes = parseTime(preferences.challengeStartTime)
+    const endMinutes = parseTime(preferences.challengeEndTime)
+    
+    // Check if current time is within challenge period
+    if (startMinutes <= endMinutes) {
+      // Normal case: start is before end (e.g., 08:00 - 22:00)
+      return currentMinutes >= startMinutes && currentMinutes < endMinutes ? "active" : "inactive"
+    } else {
+      // Overnight case: start is after end (e.g., 22:00 - 06:00)
+      return currentMinutes >= startMinutes || currentMinutes < endMinutes ? "active" : "inactive"
+    }
+  }, [preferences.challengeStartTime, preferences.challengeEndTime])
 
   const fetchData = useCallback(async () => {
     if (!user) return
@@ -60,7 +76,7 @@ export function useStreak() {
       }
     }
     setLoading(false)
-  }, [user])
+  }, [user, getCurrentPhase])
 
   useEffect(() => {
     fetchData()
@@ -69,7 +85,7 @@ export function useStreak() {
       setCurrentPhase(getCurrentPhase())
     }, 60000)
     return () => clearInterval(interval)
-  }, [fetchData])
+  }, [fetchData, getCurrentPhase])
 
   const startDay = async () => {
     if (!user || dayStatus !== "not-started") return
